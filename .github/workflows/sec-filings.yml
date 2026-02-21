@@ -1,0 +1,47 @@
+# SEC filings bot: poll watchlist, send new filings to Telegram.
+# Schedule: Turkish local time 12:00 (noon) - 04:00 (next day), weekdays. (Cron below is UTC; Turkey = UTC+3.)
+name: SEC Filings Bot
+
+on:
+  schedule:
+    # 12:00-02:59 next day Turkey = 09:00-23:59 UTC Mon-Fri
+    - cron: "*/10 9-23 * * 1-5"
+    # 03:00-04:59 Turkey = 00:00-01:59 UTC Tue-Sat (closes previous weekday window)
+    - cron: "*/10 0-1 * * 2-6"
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@4
+
+      - name: Set up Python
+        uses: actions/setup-python@5
+        with:
+          python-version: "3.12"
+
+      - name: Restore bot state
+        uses: actions/cache/restore@4
+        with:
+          path: bot_state.json
+          key: sec-bot-state
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run bot once
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+          RUN_ONCE: "1"
+        run: python main.py
+
+      - name: Save bot state
+        if: always()
+        uses: actions/cache/save@4
+        with:
+          path: bot_state.json
+          key: sec-bot-state
