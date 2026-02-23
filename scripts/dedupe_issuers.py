@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
 Deduplicate issuer list: normalize names (strip parentheticals like ($100), (was NYCB))
-and output a unique sorted list for the watchlist.
+and output a unique sorted list to watchlist_issuers.txt.
+Note: The live watchlist is ticker-based (watchlist_preferred_tickers.txt +
+watchlist_cef_tickers.txt). This script is for regenerating watchlist_issuers.txt
+from a raw issuer-names file if you have one; watchlist_issuers_raw.txt was removed.
 """
 import re
 from pathlib import Path

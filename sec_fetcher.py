@@ -10,6 +10,7 @@ from typing import Any
 import requests
 
 import config
+from sec_archives import build_primary_doc_url
 
 
 SEC_BASE = "https://data.sec.gov/submissions"
@@ -78,6 +79,7 @@ def fetch_filings_for_cik(cik: str) -> list[dict[str, Any]]:
                 pass
         acc = accessions[i] if i < len(accessions) else ""
         desc = primary_desc[i] if i < len(primary_desc) else ""
+        primary_doc_name = primary_doc[i] if i < len(primary_doc) else ""
         results.append({
             "accession_number": acc,
             "form_type": form,
@@ -85,6 +87,7 @@ def fetch_filings_for_cik(cik: str) -> list[dict[str, Any]]:
             "description": desc,
             "link": link_for(acc) if acc else "",
             "company_name": company_name,
+            "primary_doc_url": build_primary_doc_url(cik, acc, primary_doc_name),
         })
     return results
 
@@ -97,8 +100,14 @@ def fetch_all_watchlist_filings() -> list[dict[str, Any]]:
     all_filings = []
     for cik in config.WATCHLIST_CIKS:
         filings = fetch_filings_for_cik(cik)
+        try:
+            cik_int_str = str(int(str(cik).strip()))
+        except (ValueError, TypeError):
+            cik_int_str = str(cik).strip().lstrip("0") or "0"
+        ticker = config.CIK_TO_TICKER.get(cik_int_str, "")
         for f in filings:
             f["cik"] = _normalize_cik(cik)
+            f["ticker"] = ticker
             all_filings.append(f)
         time.sleep(0.2)  # throttle
     return all_filings

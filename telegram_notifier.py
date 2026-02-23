@@ -6,22 +6,45 @@ import asyncio
 from typing import Any
 
 import config
+from event_classifier import event_type_display_name, GENERIC_NEWS
 
 
-def _format_filing_message(filing: dict[str, Any]) -> str:
-    company = filing.get("company_name") or "Unknown"
+def _confidence_label(confidence: float) -> str:
+    if confidence > 0.6:
+        return "high"
+    if confidence > 0.35:
+        return "medium"
+    return "low"
+
+
+def format_filing_alert(filing: dict[str, Any]) -> str:
+    """
+    Strict template: header (ticker + event type), filing facts, 2-4 evidence bullets, links, confidence.
+    Fallback: if event_type missing or GENERIC_NEWS, use 'Filing' and omit/shorten evidence.
+    """
+    ticker = (filing.get("ticker") or "").strip().upper() or "—"
+    event_type = filing.get("event_type") or GENERIC_NEWS
+    display = event_type_display_name(event_type)
     form = filing.get("form_type") or ""
     date = filing.get("filing_date") or ""
-    desc = (filing.get("description") or "").strip()
+    evidence = filing.get("evidence_snippets") or []
     link = filing.get("link") or ""
+    primary_url = filing.get("primary_doc_url") or ""
+    confidence = float(filing.get("confidence", 0.2))
+
     lines = [
-        f"📄 <b>{form}</b> — {company}",
-        f"📅 {date}",
+        f"<b>{ticker} — {display}</b>",
+        f"{form} · {date}",
     ]
-    if desc:
-        lines.append(f"📋 {desc}")
+    if evidence:
+        for snip in evidence[:4]:
+            escaped = snip.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            lines.append(f"• {escaped}")
     if link:
         lines.append(link)
+    if primary_url and primary_url != link:
+        lines.append(primary_url)
+    lines.append(f"Confidence: {_confidence_label(confidence)}")
     return "\n".join(lines)
 
 
@@ -32,7 +55,7 @@ async def send_filing_alert(filing: dict[str, Any]) -> bool:
     try:
         from telegram import Bot
         bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
-        text = _format_filing_message(filing)
+        text = format_filing_alert(filing)
         await bot.send_message(
             chat_id=config.TELEGRAM_CHAT_ID,
             text=text,

@@ -21,17 +21,20 @@ Bot that watches **SEC filings** for US fixed income–relevant issuers (preferr
    - Open: `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates`
    - In the JSON, find `"chat":{"id": 123456789}` — that number is your `TELEGRAM_CHAT_ID`.
 
-4. **Env file**
-   ```bash
-   cp .env.example .env
-   ```
-   Edit `.env`: set `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `SEC_USER_AGENT` (your firm name + email; SEC requires this).
+4. **Env file**  
+   Create a `.env` file in the project root with:
+   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `SEC_USER_AGENT` (your name or bot name + email; SEC requires this).
 
-5. **Install and run**
+5. **Virtual environment and run** (recommended on macOS/Homebrew to avoid “externally managed” pip errors)
    ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
    pip install -r requirements.txt
    python main.py
    ```
+   To run again later: `source .venv/bin/activate` then `python main.py`.
+
+**No duplicate alerts:** The bot stores already-seen filing accession numbers in **`bot_state.json`** (in the project root). On each run it loads this file, skips any filing already in it, and saves the updated list after sending new alerts. So after the first run (which may send many messages for recent filings), restarts will only send alerts for filings that appeared since the last run. You’ll see a log line like `Loaded N seen accession(s) from bot_state.json` at startup.
 
 ## Testing the Telegram bot
 
@@ -59,7 +62,27 @@ Before running the full bot, verify that Telegram is set up correctly.
 
 You can run the bot on a schedule without a 24/7 server. The workflow is in [`.github/workflows/sec-filings.yml`](.github/workflows/sec-filings.yml).
 
-**Secrets** (repo **Settings → Secrets and variables → Actions**): add `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `SEC_USER_AGENT`. The workflow runs with `RUN_ONCE=1`, does one SEC poll, sends new filings to Telegram, then exits. State (already-seen accession numbers) is persisted via the Actions cache so you don’t get duplicate alerts across runs.
+### Push and enable automatic runs
+
+1. **Create a repo on GitHub** (e.g. `BAMSec-Filing-Bot`) and push your code:
+   ```bash
+   git init
+   git remote add origin https://github.com/YOUR_USERNAME/BAMSec-Filing-Bot.git
+   git add .
+   git commit -m "Initial commit"
+   git branch -M main
+   git push -u origin main
+   ```
+   Your `.env` and `bot_state.json` are in `.gitignore`, so they will **not** be pushed (secrets stay local).
+
+2. **Add secrets** in the repo: **Settings → Secrets and variables → Actions → New repository secret**. Create:
+   - `TELEGRAM_BOT_TOKEN` — your bot token from BotFather  
+   - `TELEGRAM_CHAT_ID` — your chat ID (number from getUpdates)  
+   - `SEC_USER_AGENT` — e.g. `BAMSecFilingBot your@email.com` (SEC requires a descriptive User-Agent)
+
+3. **Runs:** The workflow runs on the schedule below. To run it once now: **Actions** tab → select **SEC Filings Bot** → **Run workflow** → **Run workflow**.
+
+*(Secrets are set in step 2 above.)* The workflow runs with `RUN_ONCE=1`, does one SEC poll, sends new filings to Telegram, then exits. State is stored in the Actions cache so you don’t get duplicate alerts across runs.
 
 **Schedule:** 12:00–04:00 (next day) Turkish local time, weekdays. The cron expressions in the workflow are in UTC (Turkey is UTC+3). To run manually, open the **Actions** tab, select “SEC Filings Bot”, then **Run workflow**.
 
@@ -67,9 +90,11 @@ The bot polls the SEC every few minutes when run locally (see `POLL_INTERVAL_MIN
 
 ## Config
 
-- **Watchlist (tickers)**: The bot uses **`watchlist_tickers.txt`** as the source of truth — one ticker per line (e.g. `BAC`, `JPM`, `WFC`). At startup it resolves those tickers to SEC CIKs via the SEC’s [company_tickers.json](https://www.sec.gov/files/company_tickers.json), then polls filings for those CIKs. Edit `watchlist_tickers.txt` to add or remove tickers; no need to look up CIKs yourself.  
-  Tickers that don’t appear in the SEC ticker list (e.g. some preferred or series symbols) are skipped and logged once at startup.  
-  **Reference list of issuer names:** `watchlist_issuers.txt` (383 unique names) is still available for cross-reference; the live watchlist is ticker-based.
+- **Watchlist (tickers)**: The bot uses two lists, merged at startup:
+  - **`watchlist_preferred_tickers.txt`** — preferred stocks (one ticker per line).
+  - **`watchlist_cef_tickers.txt`** — closed-end funds (one ticker per line).
+  Both are resolved to SEC CIKs via [company_tickers.json](https://www.sec.gov/files/company_tickers.json); filings for any of these CIKs trigger alerts. Edit either file to add or remove tickers. Tickers not found in the SEC list are skipped and logged once at startup.  
+  **Reference:** `watchlist_issuers.txt` for issuer names; the live watchlist is ticker-based (preferreds + CEFs).
 - **Form types**: Same file → `FORM_TYPES`. Add/remove form types (e.g. `8-K`, `424B2`, `424B3`, `N-2`).
 - **Poll interval**: `POLL_INTERVAL_MINUTES` in `config.py`.
 
