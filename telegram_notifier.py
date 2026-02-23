@@ -54,8 +54,9 @@ def format_filing_alert(filing: dict[str, Any]) -> str:
 
 def format_digest_alert(filings: list[dict[str, Any]]) -> str:
     """
-    One message per (cik, form_type, filing_date) group: title line plus bullet list of links.
-    filings: list of filing dicts with same company_name, form_type, filing_date; each has link, accession_number.
+    One message per (cik, form_type, filing_date) group: title line plus bullet list.
+    Each bullet shows SEC description when present, then link.
+    filings: list of filing dicts with same company_name, form_type, filing_date; each has link, description, accession_number.
     """
     if not filings:
         return ""
@@ -68,7 +69,14 @@ def format_digest_alert(filings: list[dict[str, Any]]) -> str:
     lines = [title]
     for f in filings:
         link = f.get("link") or ""
-        if link:
+        desc = (f.get("description") or "").strip()
+        if desc:
+            escaped = desc.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            line = f"• {escaped}"
+            if link:
+                line += f" — {link}"
+            lines.append(line)
+        elif link:
             lines.append(f"• {link}")
     return "\n".join(lines)
 
