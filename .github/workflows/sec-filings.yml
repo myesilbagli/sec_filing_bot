@@ -15,21 +15,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@4
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@5
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Restore bot state
-        uses: actions/cache/restore@4
+        uses: actions/cache/restore@v4
         with:
           path: bot_state.json
           key: sec-bot-state
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Verify secrets (fail fast)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then echo "::error::TELEGRAM_BOT_TOKEN is not set"; exit 1; fi
+          if [ -z "$TELEGRAM_CHAT_ID" ]; then echo "::error::TELEGRAM_CHAT_ID is not set"; exit 1; fi
+          if [ -z "$SEC_USER_AGENT" ]; then echo "::error::SEC_USER_AGENT is not set"; exit 1; fi
+          echo "Secrets present (values hidden)."
 
       - name: Run bot once
         env:
@@ -41,7 +52,7 @@ jobs:
 
       - name: Save bot state
         if: always()
-        uses: actions/cache/save@4
+        uses: actions/cache/save@v4
         with:
           path: bot_state.json
           key: sec-bot-state
