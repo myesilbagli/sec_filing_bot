@@ -3,10 +3,14 @@ Send SEC filing alerts to Telegram.
 """
 
 import asyncio
+import logging
+import time
 from typing import Any
 
 import config
 from event_classifier import event_type_display_name, GENERIC_NEWS
+
+log = logging.getLogger(__name__)
 
 
 def _confidence_label(confidence: float) -> str:
@@ -48,25 +52,90 @@ def format_filing_alert(filing: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-async def send_filing_alert(filing: dict[str, Any]) -> bool:
-    """Send a single filing alert to the configured Telegram chat. Returns True on success."""
+def format_digest_alert(filings: list[dict[str, Any]]) -> str:
+    """
+    One message per (cik, form_type, filing_date) group: title line plus bullet list of links.
+    filings: list of filing dicts with same company_name, form_type, filing_date; each has link, accession_number.
+    """
+    if not filings:
+        return ""
+    first = filings[0]
+    company = (first.get("company_name") or "").strip() or "—"
+    form = first.get("form_type") or ""
+    date = first.get("filing_date") or ""
+    n = len(filings)
+    title = f"<b>{company} — {form} · {date}</b> ({n} filing{'s' if n != 1 else ''})"
+    lines = [title]
+    for f in filings:
+        link = f.get("link") or ""
+        if link:
+            lines.append(f"• {link}")
+    return "\n".join(lines)
+
+
+# Backoff seconds when Telegram returns 429 (up to 3 retries).
+_TELEGRAM_429_BACKOFF = [30, 60, 90]
+
+
+def _is_429(e: BaseException) -> bool:
+    s = str(e).lower()
+    return "429" in s or "too many requests" in s or "retry after" in s
+
+
+async def _send_message(text: str) -> bool:
+    """Send one message to the configured chat. Retries on 429 with backoff. Returns True on success."""
     if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
         return False
-    try:
-        from telegram import Bot
-        bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
-        text = format_filing_alert(filing)
-        await bot.send_message(
-            chat_id=config.TELEGRAM_CHAT_ID,
-            text=text,
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-        )
-        return True
-    except Exception:
-        return False
+    from telegram import Bot
+    bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
+    last_exc = None
+    for attempt in range(1 + len(_TELEGRAM_429_BACKOFF)):
+        try:
+            await bot.send_message(
+                chat_id=config.TELEGRAM_CHAT_ID,
+                text=text,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            return True
+        except Exception as e:
+            last_exc = e
+            if attempt < len(_TELEGRAM_429_BACKOFF) and _is_429(e):
+                wait = _TELEGRAM_429_BACKOFF[attempt]
+                log.warning("Telegram 429, retrying in %s s (attempt %s)", wait, attempt + 1)
+                await asyncio.sleep(wait)
+            else:
+                raise
+    if last_exc:
+        raise last_exc
+    return False
+
+
+async def send_filing_alert(filing: dict[str, Any]) -> bool:
+    """Send a single filing alert to the configured Telegram chat. Returns True on success."""
+    text = format_filing_alert(filing)
+    return await _send_message(text)
+
+
+async def send_digest_alert(filings: list[dict[str, Any]]) -> bool:
+    """Send one digest message for a group of filings (same issuer/form/date). Returns True on success."""
+    text = format_digest_alert(filings)
+    return await _send_message(text)
+
+
+def _apply_delay() -> None:
+    delay = getattr(config, "TELEGRAM_SEND_DELAY_SEC", 0) or 0
+    if delay > 0:
+        time.sleep(delay)
 
 
 def send_filing_alert_sync(filing: dict[str, Any]) -> bool:
-    """Synchronous wrapper for send_filing_alert."""
+    """Synchronous wrapper for send_filing_alert. Applies configured delay before send."""
+    _apply_delay()
     return asyncio.run(send_filing_alert(filing))
+
+
+def send_digest_alert_sync(filings: list[dict[str, Any]]) -> bool:
+    """Synchronous wrapper for send_digest_alert. Applies configured delay before send."""
+    _apply_delay()
+    return asyncio.run(send_digest_alert(filings))

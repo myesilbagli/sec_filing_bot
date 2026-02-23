@@ -65,10 +65,17 @@ def fetch_filings_for_cik(cik: str) -> list[dict[str, Any]]:
     except Exception:
         cutoff = None
 
+    # Dedupe by accession within this CIK so the same accession is not processed twice in one run.
+    seen_acc = set()
     results = []
     for i, form in enumerate(forms):
         if form not in config.FORM_TYPES:
             continue
+        acc = accessions[i] if i < len(accessions) else ""
+        if acc and acc in seen_acc:
+            continue
+        if acc:
+            seen_acc.add(acc)
         filing_date = dates[i] if i < len(dates) else ""
         if cutoff and filing_date:
             try:
@@ -77,7 +84,6 @@ def fetch_filings_for_cik(cik: str) -> list[dict[str, Any]]:
                     continue
             except Exception:
                 pass
-        acc = accessions[i] if i < len(accessions) else ""
         desc = primary_desc[i] if i < len(primary_desc) else ""
         primary_doc_name = primary_doc[i] if i < len(primary_doc) else ""
         results.append({

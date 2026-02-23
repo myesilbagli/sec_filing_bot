@@ -13,7 +13,7 @@ from event_classifier import classify_event, get_phrases_for_event
 from evidence_snippets import extract_snippets
 from sec_archives import SecHttpClient
 from sec_fetcher import fetch_all_watchlist_filings
-from telegram_notifier import send_filing_alert_sync
+from telegram_notifier import send_digest_alert_sync, send_filing_alert_sync
 from text_extract import extract_text
 
 logging.basicConfig(
@@ -49,15 +49,62 @@ def save_seen_accessions(seen: set[str]) -> None:
         log.warning("Could not save state: %s", e)
 
 
+def _group_by_cik_form_date(filings: list[dict]) -> list[list[dict]]:
+    """Group filings by (cik, form_type, filing_date). Return list of groups, each group a list of filing dicts."""
+    from collections import defaultdict
+    groups_map: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
+    for f in filings:
+        key = (f.get("cik") or "", f.get("form_type") or "", f.get("filing_date") or "")
+        groups_map[key].append(f)
+    # Order by date desc, then cik, so most recent first.
+    sorted_keys = sorted(
+        groups_map.keys(),
+        key=lambda k: (k[2], k[0]),
+        reverse=True,
+    )
+    return [groups_map[k] for k in sorted_keys]
+
+
 def run_once(seen: set[str]) -> set[str]:
     """Fetch filings, send alerts for new ones, return updated set of seen accession numbers."""
     log.info("Fetching filings for %s CIKs...", len(config.WATCHLIST_CIKS))
     filings = fetch_all_watchlist_filings()
     log.info("Got %s filings (after form filter).", len(filings))
 
+    # Filter to new accessions only.
+    new_filings = [f for f in filings if f.get("accession_number") and f["accession_number"] not in seen]
+
+    digest_mode = getattr(config, "ALERT_DIGEST_BY_GROUP", True)
+    max_per_run = getattr(config, "MAX_NEW_ALERTS_PER_RUN", None)
+
+    if digest_mode and new_filings:
+        # Group by (cik, form_type, filing_date); one message per group (Option A: no primary-doc fetch).
+        groups = _group_by_cik_form_date(new_filings)
+        if max_per_run is not None:
+            groups = groups[:max_per_run]
+        for group in groups:
+            if send_digest_alert_sync(group):
+                for f in group:
+                    acc = f.get("accession_number")
+                    if acc:
+                        seen.add(acc)
+                log.info(
+                    "Digest sent: %s %s (%s filing(s))",
+                    group[0].get("company_name"),
+                    group[0].get("form_type"),
+                    len(group),
+                )
+            else:
+                log.warning("Failed to send digest for %s %s", group[0].get("company_name"), group[0].get("form_type"))
+        return seen
+
+    # Non-digest: fetch primary doc, classify, send one alert per filing.
+    if max_per_run is not None:
+        new_filings = new_filings[:max_per_run]
+
     # Step 1 validation (RUN_ONCE): fetch first filing's primary doc and print first 300 chars.
-    if os.environ.get("RUN_ONCE") == "1" and filings:
-        f0 = filings[0]
+    if os.environ.get("RUN_ONCE") == "1" and new_filings:
+        f0 = new_filings[0]
         url = f0.get("primary_doc_url")
         if url:
             try:
@@ -70,9 +117,9 @@ def run_once(seen: set[str]) -> set[str]:
                 log.warning("Step 1 validation fetch failed: %s", e)
 
     sec_client = SecHttpClient(config.SEC_USER_AGENT, min_interval_s=0.25)
-    for f in filings:
+    for f in new_filings:
         acc = f.get("accession_number")
-        if not acc or acc in seen:
+        if not acc:
             continue
         seen.add(acc)
         url = f.get("primary_doc_url")

@@ -15,7 +15,9 @@ We use the **SEC’s public, unauthenticated JSON API** on `data.sec.gov` (no AP
 - Company name, tickers, SIC, etc.
 - `filings.recent`: arrays of recent filings (form type, accession number, filing date, primary doc description, etc.)
 
-We **do not** download full filing documents; we only use this metadata to build alerts and links to the filing index on sec.gov.
+**EDGAR “recent” structure:** `filings.recent` is **one row per filing**: parallel arrays (`form`, `accessionNumber`, `filingDate`, `primaryDocument`, …) aligned by index. The same issuer can have many rows (e.g. dozens of 424B2s for different note series). We treat each row as one filing and use `accession_number` as the unique key for “already seen.” When **digest mode** is on (`ALERT_DIGEST_BY_GROUP`), we group new filings by (issuer, form type, filing date) and send one Telegram message per group (e.g. “WFC — 424B2 · 2026-02-20 (5 filings): link1, link2, …”) to reduce message count and stay under Telegram rate limits.
+
+We **do not** download full filing documents in digest mode; we use metadata and links only. Without digest, we fetch the primary document for classification and send one alert per filing.
 
 **Required header:** SEC expects a descriptive `User-Agent` (who you are + contact). We send it from `config.SEC_USER_AGENT` (set in `.env`).
 

@@ -42,3 +42,13 @@ MAX_FILING_AGE_DAYS = 7
 
 # Cap size of seen_accessions in state so it does not grow forever.
 MAX_SEEN_ACCESSIONS = 5000
+
+# Group new filings by (cik, form_type, filing_date) and send one Telegram message per group (digest).
+ALERT_DIGEST_BY_GROUP = True
+
+# Max new alert groups (or single filings) to process per run; rest are sent in a later run. None = no cap. Set env to 0 for no cap.
+_max_per_run = os.getenv("MAX_NEW_ALERTS_PER_RUN", "200").strip()
+MAX_NEW_ALERTS_PER_RUN = int(_max_per_run) if _max_per_run and _max_per_run != "0" else None
+
+# Seconds to wait between Telegram sends to avoid 429 rate limit.
+TELEGRAM_SEND_DELAY_SEC = 1.2

@@ -2,6 +2,15 @@
 Extract plain text from SEC document bytes (HTML or TXT).
 """
 
+import warnings
+
+# SEC documents are often XBRL/XML; suppress "parsed as HTML" warning for clean logs.
+try:
+    from bs4.builder import XMLParsedAsHTMLWarning
+    warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+except ImportError:
+    pass
+
 
 def _parser() -> str:
     """Use lxml if available, else html.parser."""
