@@ -12,6 +12,9 @@ from event_classifier import event_type_display_name, GENERIC_NEWS
 
 log = logging.getLogger(__name__)
 
+# Telegram message length limit (characters).
+TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+
 
 def build_feedback_keyboard(filing: dict[str, Any]) -> "InlineKeyboardMarkup":
     """Build inline keyboard with Correct / Wrong / Not relevant for a single-filing alert."""
@@ -147,9 +150,47 @@ async def send_filing_alert(filing: dict[str, Any]) -> bool:
 
 
 async def send_digest_alert(filings: list[dict[str, Any]]) -> bool:
-    """Send one digest message for a group of filings (same issuer/form/date). Returns True on success."""
+    """Send one or more digest messages for a group of filings. Splits if over Telegram's 4096-char limit."""
+    if not filings:
+        return True
     text = format_digest_alert(filings)
-    return await _send_message(text)
+    if len(text) <= TELEGRAM_MAX_MESSAGE_LENGTH:
+        return await _send_message(text)
+    # Split into chunks: build lines and send in batches under the limit.
+    first = filings[0]
+    company = (first.get("company_name") or "").strip() or "—"
+    form = first.get("form_type") or ""
+    date = first.get("filing_date") or ""
+    n = len(filings)
+    title = f"<b>{company} — {form} · {date}</b> ({n} filing{'s' if n != 1 else ''})"
+    lines = [title]
+    for f in filings:
+        link = f.get("link") or ""
+        desc = (f.get("description") or "").strip()
+        if desc:
+            escaped = desc.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            line = f"• {escaped}"
+            if link:
+                line += f" — {link}"
+            lines.append(line)
+        elif link:
+            lines.append(f"• {link}")
+    max_line = TELEGRAM_MAX_MESSAGE_LENGTH - 20  # leave room for "(continued)" etc.
+    chunk: list[str] = []
+    for line in lines:
+        if len(line) > max_line:
+            line = line[: max_line - 1] + "…"
+        trial = chunk + [line]
+        trial_text = "\n".join(trial)
+        if chunk and len(trial_text) > TELEGRAM_MAX_MESSAGE_LENGTH:
+            if await _send_message("\n".join(chunk)) is False:
+                return False
+            chunk = ["<i>(continued)</i>", line]
+        else:
+            chunk = trial
+    if chunk:
+        return await _send_message("\n".join(chunk))
+    return True
 
 
 def _apply_delay() -> None:
