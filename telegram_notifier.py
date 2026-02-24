@@ -13,6 +13,23 @@ from event_classifier import event_type_display_name, GENERIC_NEWS
 log = logging.getLogger(__name__)
 
 
+def build_feedback_keyboard(filing: dict[str, Any]) -> "InlineKeyboardMarkup":
+    """Build inline keyboard with Correct / Wrong / Not relevant for a single-filing alert."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    accession = (filing.get("accession_number") or "").strip()
+    suggested = (filing.get("event_type") or GENERIC_NEWS).strip()
+    if not accession or not suggested:
+        return InlineKeyboardMarkup([])
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Correct", callback_data=f"ok:{accession}:{suggested}"),
+            InlineKeyboardButton("Wrong", callback_data=f"wrong:{accession}:{suggested}"),
+            InlineKeyboardButton("Not relevant", callback_data=f"irrelevant:{accession}:{suggested}"),
+        ],
+    ])
+
+
 def _confidence_label(confidence: float) -> str:
     if confidence > 0.6:
         return "high"
@@ -90,21 +107,24 @@ def _is_429(e: BaseException) -> bool:
     return "429" in s or "too many requests" in s or "retry after" in s
 
 
-async def _send_message(text: str) -> bool:
+async def _send_message(text: str, reply_markup: Any = None) -> bool:
     """Send one message to the configured chat. Retries on 429 with backoff. Returns True on success."""
     if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
         return False
     from telegram import Bot
     bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
     last_exc = None
+    kwargs = dict(
+        chat_id=config.TELEGRAM_CHAT_ID,
+        text=text,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+    if reply_markup is not None:
+        kwargs["reply_markup"] = reply_markup
     for attempt in range(1 + len(_TELEGRAM_429_BACKOFF)):
         try:
-            await bot.send_message(
-                chat_id=config.TELEGRAM_CHAT_ID,
-                text=text,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
+            await bot.send_message(**kwargs)
             return True
         except Exception as e:
             last_exc = e
@@ -120,9 +140,10 @@ async def _send_message(text: str) -> bool:
 
 
 async def send_filing_alert(filing: dict[str, Any]) -> bool:
-    """Send a single filing alert to the configured Telegram chat. Returns True on success."""
+    """Send a single filing alert with Correct / Wrong / Not relevant buttons. Returns True on success."""
     text = format_filing_alert(filing)
-    return await _send_message(text)
+    keyboard = build_feedback_keyboard(filing)
+    return await _send_message(text, reply_markup=keyboard)
 
 
 async def send_digest_alert(filings: list[dict[str, Any]]) -> bool:

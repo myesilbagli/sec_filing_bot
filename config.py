@@ -52,3 +52,7 @@ MAX_NEW_ALERTS_PER_RUN = int(_max_per_run) if _max_per_run and _max_per_run != "
 
 # Seconds to wait between Telegram sends to avoid 429 rate limit.
 TELEGRAM_SEND_DELAY_SEC = 1.2
+
+# Feedback storage (for Telegram Correct / Wrong / Not relevant).
+FEEDBACK_FILE = os.getenv("FEEDBACK_FILE", "feedback_labels.jsonl")
+FEEDBACK_OFFSET_FILE = os.getenv("FEEDBACK_OFFSET_FILE", "feedback_offset.txt")

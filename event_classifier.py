@@ -18,7 +18,25 @@ TENDER_OFFER = "TENDER_OFFER"
 EXCHANGE_OFFER = "EXCHANGE_OFFER"
 CEF_DISTRIBUTION_CHANGE = "CEF_DISTRIBUTION_CHANGE"
 LIQUIDATION_TERMINATION = "LIQUIDATION_TERMINATION"
+EARNINGS = "EARNINGS"
 GENERIC_NEWS = "GENERIC_NEWS"
+NOT_RELEVANT = "NOT_RELEVANT"
+
+# All classified event types (for feedback "Wrong" keyboard). Excludes NOT_RELEVANT (feedback sentinel only).
+ALL_EVENT_TYPES = (
+    PREF_CALL,
+    PREF_PARTIAL_CALL,
+    PREF_NEW_ISSUE,
+    DIV_SUSPENSION,
+    OFFERING,
+    RIGHTS_OFFERING,
+    TENDER_OFFER,
+    EXCHANGE_OFFER,
+    CEF_DISTRIBUTION_CHANGE,
+    LIQUIDATION_TERMINATION,
+    EARNINGS,
+    GENERIC_NEWS,
+)
 
 
 @dataclass(frozen=True)
@@ -158,6 +176,22 @@ RULES: list[EventRule] = [
             r"\bconvert(?:ed|s|ing)\b.*\bto an open-?end\b",
         ],
     ),
+    EventRule(
+        event_type=EARNINGS,
+        priority=72,
+        patterns=[
+            r"\bearnings release\b",
+            r"\bquarterly earnings\b",
+            r"\bannual earnings\b",
+            r"\bearnings call\b",
+            r"\bconference call\b.*\bearnings\b",
+            r"\bannouncement of (?:quarterly |annual )?earnings\b",
+            r"\bresults (?:for|of) the (?:quarter|fiscal|period)\b",
+            r"\bearnings (?:for|report|results)\b",
+            r"\bnet income\b.*\bquarter\b",
+            r"\bfinancial results\b",
+        ],
+    ),
 ]
 
 
@@ -244,6 +278,7 @@ def event_type_display_name(event_type: str) -> str:
         EXCHANGE_OFFER: "Exchange offer / consent",
         CEF_DISTRIBUTION_CHANGE: "CEF distribution change",
         LIQUIDATION_TERMINATION: "Liquidation / Termination",
+        EARNINGS: "Earnings / earnings call",
         GENERIC_NEWS: "Filing",
     }
     return labels.get(event_type, event_type or "Filing")

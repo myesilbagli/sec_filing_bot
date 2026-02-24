@@ -88,6 +88,8 @@ You can run the bot on a schedule without a 24/7 server. The workflow is in [`.g
 
 The bot polls the SEC every few minutes when run locally (see `POLL_INTERVAL_MINUTES` in `config.py`). On GitHub Actions it runs once per scheduled or manual trigger. Respect SEC rate limits (e.g. 10 req/s); the default interval is conservative.
 
+**Telegram feedback (single-filing mode):** When using single-filing alerts (digest off), each message includes **Correct** / **Wrong** / **Not relevant** buttons so you can confirm or correct the event type. Feedback is collected by the [Telegram Feedback Listener](.github/workflows/telegram-feedback-listener.yml) workflow, which runs every 10 minutes and commits new feedback to `feedback_labels.jsonl` and `feedback_offset.txt` in the repo. No always-on PC or VPS is required. You can tune the schedule after testing.
+
 ## Config
 
 - **Watchlist (tickers)**: The bot uses two lists, merged at startup:
